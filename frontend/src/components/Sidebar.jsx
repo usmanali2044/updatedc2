@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import DeleteVictimModal from './DeleteVictimModal';
 
 function formatVictimDate(title) {
   // Titles like: "09-05-2026-WIN-DDS04GK93AD-31242"
@@ -25,6 +27,8 @@ export default function Sidebar() {
     setShowSettings,
     sleepStatus, victimStatus,
   } = useApp();
+
+  const [victimToDelete, setVictimToDelete] = useState(null);
 
   return (
     <aside className="flex flex-col h-full w-64 border-r border-[#21262d] bg-[#0f1117] flex-shrink-0">
@@ -53,7 +57,7 @@ export default function Sidebar() {
           onClick={() => fetchVictims()}
           disabled={!isConfigured || loading}
           className="text-[#8b949e] hover:text-[#00ff88] transition-colors disabled:opacity-40"
-          title="Refresh now (list also auto-updates every 10s)"
+          title="Refresh now (list auto-updates every 60s when quota allows)"
         >
           <svg className={`w-3.5 h-3.5 ${loading ? 'spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -106,12 +110,16 @@ export default function Sidebar() {
             const name = formatVictimName(v.title);
             const date = formatVictimDate(v.title);
             return (
-              <button
+              <div
                 key={v.id}
-                onClick={() => setActiveVictim(v)}
-                className={`victim-card w-full text-left px-3 py-2.5 rounded-lg mb-1 ${isActive ? 'active' : ''}`}
+                className={`victim-card w-full flex items-center gap-1 px-2 py-1 rounded-lg mb-1 ${isActive ? 'active' : ''}`}
               >
-                <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveVictim(v)}
+                  className="flex-1 min-w-0 text-left px-1 py-1.5 rounded-md"
+                >
+                  <div className="flex items-center gap-2.5">
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 pulse-online ${statusColor}`} />
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-[#e6edf3] truncate" title={name}>
@@ -133,7 +141,22 @@ export default function Sidebar() {
                     )}
                   </div>
                 </div>
-              </button>
+              
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVictimToDelete(v);
+                  }}
+                  className="flex-shrink-0 p-1.5 rounded-md text-[#484f58] hover:text-[#ff4757] hover:bg-[#ff4757]/10 transition-colors"
+                  title="Delete victim"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             );
           })
         )}
@@ -152,6 +175,13 @@ export default function Sidebar() {
           Settings
         </button>
       </div>
+      {victimToDelete && (
+        <DeleteVictimModal
+          victim={victimToDelete}
+          onClose={() => setVictimToDelete(null)}
+          onDeleted={() => setVictimToDelete(null)}
+        />
+      )}
     </aside>
   );
 }
