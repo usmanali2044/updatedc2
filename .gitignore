@@ -1,29 +1,42 @@
-private/*
-.idea/*
-.vscode/*
-.DS_Store
-bin/*
+# Secrets & local config
+private/
+c2/cmd/options.yml
+cmd/options.yml
+.env
+.env.local
+.env.*
+!.env.example
+frontend/.env
+server/.env
 
-# Node dependencies
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+bin/
+c2/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node
 node_modules/
 frontend/node_modules/
 server/node_modules/
-
-# Frontend build output
 frontend/dist/
 frontend/.vite/
-
-# Environment files
-.env
-.env.local
-frontend/.env
-server/.env
 
 # Logs
 *.log
 npm-debug.log*
-
-# OS files
-Thumbs.dbcmd/options.yml
-cmd/options.yml
-*.exe
+yarn-debug.log*
+yarn-error.log*

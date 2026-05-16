@@ -12,20 +12,13 @@ function PollingBadge() {
 }
 
 const HINTS = [
-  'whoami','hostname','ipconfig','ifconfig','pwd','ls -la','dir',
-  'ps aux','tasklist','netstat -an','cat /etc/passwd',
-  'sleep 10s','sleep 5m','sleep 1h','sleep 08:00:00',
-
-  'upload;C:\\Users\\victim\\Desktop\\file.txt',
-  'upload;/home/user/secret.pdf',
-  'download;<fileId>;C:\\dest\\file.txt',
+  'whoami', 'hostname', 'ipconfig', 'systeminfo', 'pwd', 'dir',
+  'tasklist', 'netstat -an', 'sleep 10s', 'sleep 5m', 'sleep 1h', 'sleep 08:00:00',
   'exit',
 ];
 
 function badge(type) {
   const m = {
-    upload:   { l:'UPLOAD',   c:'#00d4ff' },
-    download: { l:'DOWNLOAD', c:'#ffa502' },
     danger:   { l:'EXIT',     c:'#ff4757' },
     command:  { l:'CMD',      c:'#00ff88' },
   };
@@ -41,8 +34,6 @@ function badge(type) {
 function classify(cmd) {
   if (!cmd) return null;
   if (cmd === 'Delay configuration (sec)') return null;
-  if (cmd.startsWith('upload;'))   return 'upload';
-  if (cmd.startsWith('download;')) return 'download';
   if (cmd === 'exit')              return 'danger';
   return 'command';
 }
@@ -91,9 +82,6 @@ function Row({ row, idx }) {
               className="mt-1 text-[#00ff88] text-xs hover:underline">
               {exp ? '▲ collapse' : `▼ show more (${row.output.length} chars)`}
             </button>
-          )}
-          {type === 'upload' && (
-            <p className="mt-1 text-xs text-[#00d4ff]">✓ File uploaded to Google Drive</p>
           )}
         </div>
       ) : null}
@@ -213,7 +201,6 @@ export default function Terminal() {
       {/* Stats */}
       <div className="flex items-center gap-4 px-5 py-1.5 border-b border-[#21262d]/30 bg-[#0f1117]/70 flex-shrink-0 text-[10px] text-[#8b949e]">
         <span><span className="text-[#00ff88]">●</span> {cmdRows.length} commands</span>
-        <span><span className="text-[#00d4ff]">●</span> {cmdRows.filter(r=>r.command.startsWith('upload;')).length} uploads</span>
         {polling && (
           <span className="text-[#ffa502]">
             ↻ Auto-polling every 4s for beacon response…
@@ -283,7 +270,7 @@ export default function Terminal() {
             <kbd className="bg-[#21262d] px-1 rounded">Enter</kbd> send &nbsp;
             <kbd className="bg-[#21262d] px-1 rounded">Tab</kbd> autocomplete &nbsp;
             <kbd className="bg-[#21262d] px-1 rounded">↑↓</kbd> history &nbsp;|&nbsp;
-            sleep <em>10s/5m/1h/08:00:00</em> · upload;<em>path</em> · download;<em>fileId</em>;<em>dest</em> · exit
+            sleep <em>10s/5m/1h/08:00:00</em> · exit
           </p>
         </div>
       </div>

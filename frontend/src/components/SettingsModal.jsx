@@ -8,7 +8,6 @@ export default function SettingsModal() {
   const [form, setForm] = useState({
     serviceAccountKey: '',
     sheetId: config.sheetId || '',
-    driveId: config.driveId || '',
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
@@ -19,7 +18,6 @@ export default function SettingsModal() {
     setSaving(true);
     const payload = {};
     if (form.sheetId)           payload.sheetId = form.sheetId;
-    if (form.driveId)           payload.driveId = form.driveId;
     if (form.serviceAccountKey) payload.serviceAccountKey = form.serviceAccountKey;
     await saveConfig(payload);
     await fetchVictims();
@@ -32,7 +30,6 @@ export default function SettingsModal() {
     <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="bg-[#0f1117] border border-[#21262d] rounded-xl w-full max-w-xl shadow-2xl fade-in">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#21262d]">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/20 flex items-center justify-center">
@@ -43,7 +40,7 @@ export default function SettingsModal() {
             </div>
             <div>
               <h2 className="text-sm font-semibold text-[#e6edf3]">Configuration</h2>
-              <p className="text-[10px] text-[#8b949e]">Auto-loaded from <code className="text-[#00ff88]">cmd/options.yml</code></p>
+              <p className="text-[10px] text-[#8b949e]">Google Sheets · <code className="text-[#00ff88]">c2/cmd/options.yml</code></p>
             </div>
           </div>
           <button onClick={() => setShowSettings(false)} className="text-[#8b949e] hover:text-[#e6edf3] transition-colors">
@@ -53,10 +50,7 @@ export default function SettingsModal() {
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-5 space-y-4">
-
-          {/* Config error banner */}
           {configError && (
             <div className="flex items-start gap-2 bg-[#ff4757]/10 border border-[#ff4757]/20 rounded-lg px-4 py-3">
               <svg className="w-4 h-4 text-[#ff4757] flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -66,29 +60,12 @@ export default function SettingsModal() {
             </div>
           )}
 
-          {/* Read-only status cards */}
           {!editing && (
             <div className="space-y-3">
-              <StatusRow
-                label="Command Service"
-                value={config.commandService || '—'}
-                ok={!!config.commandService}
-              />
-              <StatusRow
-                label="File System Service"
-                value={config.fileSystemService || '—'}
-                ok={!!config.fileSystemService}
-              />
               <StatusRow
                 label="Google Sheet ID"
                 value={config.sheetId || 'Not set'}
                 ok={!!config.sheetId}
-                mono
-              />
-              <StatusRow
-                label="Google Drive ID"
-                value={config.driveId || 'Not set'}
-                ok={!!config.driveId}
                 mono
               />
               <StatusRow
@@ -99,11 +76,10 @@ export default function SettingsModal() {
             </div>
           )}
 
-          {/* Edit form */}
           {editing && (
             <div className="space-y-4">
               <div className="bg-[#161b22] border border-[#ffa502]/20 rounded-lg px-4 py-3 text-xs text-[#ffa502]">
-                ⚠ Changes will be written back to <code>cmd/options.yml</code>
+                Changes are written to <code>c2/cmd/options.yml</code>
               </div>
 
               <Field
@@ -111,12 +87,6 @@ export default function SettingsModal() {
                 value={form.sheetId}
                 onChange={handle('sheetId')}
                 placeholder="0987654321..."
-              />
-              <Field
-                label="Google Drive Folder ID"
-                value={form.driveId}
-                onChange={handle('driveId')}
-                placeholder="1234554321..."
               />
               <div>
                 <label className="block text-[10px] uppercase tracking-widest text-[#8b949e] mb-2">
@@ -135,7 +105,6 @@ export default function SettingsModal() {
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[#21262d]">
           <button
             onClick={fetchConfig}
@@ -162,17 +131,14 @@ export default function SettingsModal() {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg,#00ff88,#00d4ff)', color: '#0a0c10' }}
                 >
-                  {saving ? '…Saving' : saved ? '✓ Saved!' : '💾 Save to options.yml'}
+                  {saving ? 'Saving…' : saved ? 'Saved!' : 'Save to c2/cmd/options.yml'}
                 </button>
               </>
             ) : (
               <button
-                onClick={() => { setForm({ serviceAccountKey: '', sheetId: config.sheetId, driveId: config.driveId }); setEditing(true); }}
+                onClick={() => { setForm({ serviceAccountKey: '', sheetId: config.sheetId }); setEditing(true); }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] border border-[#21262d] transition-all"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
                 Edit
               </button>
             )}

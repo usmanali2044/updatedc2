@@ -22,7 +22,7 @@ export default function Sidebar() {
   const {
     victims, activeVictim, setActiveVictim,
     loading, fetchVictims, isConfigured,
-    setShowSettings, setShowDrive, config,
+    setShowSettings,
     sleepStatus, victimStatus,
   } = useApp();
 
@@ -50,10 +50,10 @@ export default function Sidebar() {
           Victims ({victims.length})
         </span>
         <button
-          onClick={fetchVictims}
+          onClick={() => fetchVictims()}
           disabled={!isConfigured || loading}
           className="text-[#8b949e] hover:text-[#00ff88] transition-colors disabled:opacity-40"
-          title="Refresh victims"
+          title="Refresh now (list also auto-updates every 10s)"
         >
           <svg className={`w-3.5 h-3.5 ${loading ? 'spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -141,17 +141,6 @@ export default function Sidebar() {
 
       {/* Bottom nav */}
       <div className="border-t border-[#21262d] p-2 space-y-1">
-        {config.driveId && (
-          <button
-            onClick={() => setShowDrive(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[#8b949e] hover:text-[#00d4ff] hover:bg-[#00d4ff]/5 transition-all text-xs"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            Exfiltrated Files
-          </button>
-        )}
         <button
           onClick={() => setShowSettings(true)}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22] transition-all text-xs"
