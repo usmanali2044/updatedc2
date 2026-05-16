@@ -77,10 +77,6 @@ func Run() {
 				} else {
 					utils.LogDebug("[+] Command successfully pushed: " + formattedOutput)
 				}
-
-				if consumeExitAfterPush() {
-					Exit()
-				}
 			}()
 		}
 	}

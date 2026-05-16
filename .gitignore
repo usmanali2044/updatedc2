@@ -17,14 +17,12 @@ server/.env
 .DS_Store
 Thumbs.db
 
-# Go
+# Go (Windows beacon)
 bin/
 c2/bin/
 *.exe
 *.exe~
 *.dll
-*.so
-*.dylib
 *.test
 *.out
 
@@ -40,3 +38,4 @@ frontend/.vite/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
