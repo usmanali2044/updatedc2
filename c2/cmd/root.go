@@ -18,6 +18,7 @@ var (
 type ConfigurationFile struct {
 	GoogleServiceAccountKey string `yaml:"GoogleServiceAccountKey"`
 	GoogleSheetID           string `yaml:"GoogleSheetID"`
+	AESKey                  string `yaml:"AESKey"`
 	RowId                   int    `yaml:"RowId"`
 	Proxy                   string `yaml:"Proxy"`
 	Verbose                 bool   `yaml:"Verbose"`
@@ -44,6 +45,7 @@ func Execute() {
 	configuration.SetOptions(
 		configurationFile.GoogleServiceAccountKey,
 		configurationFile.GoogleSheetID,
+		configurationFile.AESKey,
 		configurationFile.RowId,
 		proxyUrl,
 		configurationFile.Verbose,

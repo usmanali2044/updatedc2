@@ -23,7 +23,7 @@ function isQuotaError(e) {
 
 export function AppProvider({ children }) {
   const [config, setConfig] = useState({
-    sheetId: '', hasServiceAccount: false,
+    sheetId: '', hasServiceAccount: false, hasAesKey: false, usingDefaultAesKey: true,
   });
   const [configLoaded, setConfigLoaded] = useState(false);
   const [configError, setConfigError]   = useState(null);

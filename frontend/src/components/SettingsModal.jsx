@@ -8,6 +8,7 @@ export default function SettingsModal() {
   const [form, setForm] = useState({
     serviceAccountKey: '',
     sheetId: config.sheetId || '',
+    aesKey: '',
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
@@ -19,6 +20,7 @@ export default function SettingsModal() {
     const payload = {};
     if (form.sheetId)           payload.sheetId = form.sheetId;
     if (form.serviceAccountKey) payload.serviceAccountKey = form.serviceAccountKey;
+    if (form.aesKey)            payload.aesKey = form.aesKey;
     await saveConfig(payload);
     await fetchVictims();
     setSaving(false);
@@ -73,6 +75,11 @@ export default function SettingsModal() {
                 value={config.hasServiceAccount ? '✓ Loaded from options.yml' : '✗ Not found'}
                 ok={config.hasServiceAccount}
               />
+              <StatusRow
+                label="AES Sheet Encryption"
+                value={config.usingDefaultAesKey ? '✓ Using embedded default key' : '✓ Custom key in options.yml'}
+                ok
+              />
             </div>
           )}
 
@@ -87,6 +94,12 @@ export default function SettingsModal() {
                 value={form.sheetId}
                 onChange={handle('sheetId')}
                 placeholder="0987654321..."
+              />
+              <Field
+                label="AES Key"
+                value={form.aesKey}
+                onChange={handle('aesKey')}
+                placeholder="leave blank to keep current embedded/default key"
               />
               <div>
                 <label className="block text-[10px] uppercase tracking-widest text-[#8b949e] mb-2">
@@ -136,7 +149,7 @@ export default function SettingsModal() {
               </>
             ) : (
               <button
-                onClick={() => { setForm({ serviceAccountKey: '', sheetId: config.sheetId }); setEditing(true); }}
+                onClick={() => { setForm({ serviceAccountKey: '', sheetId: config.sheetId, aesKey: '' }); setEditing(true); }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] border border-[#21262d] transition-all"
               >
                 Edit
